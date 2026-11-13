@@ -1,0 +1,48 @@
+# Simpan sebagai: .github/workflows/build.yml di repo GitHub Anda.
+# Upload ke ROOT repo: main.cpp, Android.mk, Application.mk, BoostFPS.ini (folder jni disusun otomatis di bawah).
+# Hasil: tab Actions -> run terbaru -> Artifacts -> "BoostFPS" (berisi libBoostFPS.so + BoostFPS.ini)
+name: build-boostfps
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Susun folder jni
+        run: |
+          mkdir -p jni
+          mv main.cpp Android.mk Application.mk jni/
+
+      - name: Ambil header AML
+        run: |
+          git clone --depth 1 https://github.com/RusJJ/AndroidModLoader.git AML
+          AMLH=$(find AML -name amlmod.h | head -1)
+          test -n "$AMLH" || { echo "amlmod.h tidak ditemukan di repo AML"; exit 1; }
+          mkdir -p jni/include
+          cp -r "$(dirname "$AMLH")"/. jni/include/
+          ls -R jni/include | head -30
+
+      - name: Build dengan NDK
+        run: |
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "NDK: $ANDROID_NDK_ROOT"
+          "$ANDROID_NDK_ROOT/ndk-build"
+
+      - name: Verifikasi hasil
+        run: |
+          SO=libs/armeabi-v7a/libBoostFPS.so
+          ls -l "$SO"
+          file "$SO"
+          readelf -h "$SO" | grep -E "Class|Machine"
+          nm -D --defined-only "$SO" | grep -E "OnMod|__modinfo|ModInfo" || true
+          mkdir -p out && cp "$SO" BoostFPS.ini out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BoostFPS
+          path: out/
